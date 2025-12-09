@@ -1,0 +1,111 @@
+Cycle:        0	|| Inst at 0x0             | NOP (idle)              | NOP (idle)              | NOP (idle)              | NOP (idle)              |
+Cycle:        1	|| Inst at 0x4             | addi t0, zero, 60       | NOP (idle)              | NOP (idle)              | NOP (idle)              |
+Cycle:        2	|| Inst at 0x8             | addi t5, zero, 108      | addi t0, zero, 60       | NOP (idle)              | NOP (idle)              |
+Cycle:        3	|| Inst at 0xc             | lw t5, 0(t5)            | addi t5, zero, 108      | addi t0, zero, 60       | NOP (idle)              |
+Cycle:        4	|| Inst at 0x10            | addi t2, zero, 1        | lw t5, 0(t5)            | addi t5, zero, 108      | addi t0, zero, 60       |
+Cycle:        5	|| Inst at 0x14            | sw t2, 0(t0)            | addi t2, zero, 1        | lw t5, 0(t5)            | addi t5, zero, 108      |
+Cycle:        6	|| Inst at 0x18            | sw t2, 4(t0)            | sw t2, 0(t0)            | addi t2, zero, 1        | lw t5, 0(t5)            |
+Cycle:        7	|| Inst at 0x1c            | addi t1, t5, -2         | sw t2, 4(t0)            | sw t2, 0(t0)            | addi t2, zero, 1        |
+Cycle:        8	|| Inst at 0x20            | lw t3, 0(t0)            | addi t1, t5, -2         | sw t2, 4(t0)            | sw t2, 0(t0)            |
+Cycle:        9	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | addi t1, t5, -2         | sw t2, 4(t0)            |
+Cycle:       10	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | addi t1, t5, -2         |
+Cycle:       11	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:       12	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:       13	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:       14	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:       15	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:       16	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:       17	|| Inst at 0x1c            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:       18	|| Inst at 0x20            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:       19	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       |
+Cycle:       20	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          |
+Cycle:       21	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:       22	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:       23	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:       24	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:       25	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:       26	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:       27	|| Inst at 0x1c            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:       28	|| Inst at 0x20            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:       29	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       |
+Cycle:       30	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          |
+Cycle:       31	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:       32	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:       33	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:       34	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:       35	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:       36	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:       37	|| Inst at 0x1c            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:       38	|| Inst at 0x20            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:       39	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       |
+Cycle:       40	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          |
+Cycle:       41	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:       42	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:       43	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:       44	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:       45	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:       46	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:       47	|| Inst at 0x1c            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:       48	|| Inst at 0x20            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:       49	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       |
+Cycle:       50	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          |
+Cycle:       51	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:       52	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:       53	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:       54	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:       55	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:       56	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:       57	|| Inst at 0x1c            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:       58	|| Inst at 0x20            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:       59	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       |
+Cycle:       60	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          |
+Cycle:       61	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:       62	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:       63	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:       64	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:       65	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:       66	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:       67	|| Inst at 0x1c            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:       68	|| Inst at 0x20            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:       69	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       |
+Cycle:       70	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          |
+Cycle:       71	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:       72	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:       73	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:       74	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:       75	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:       76	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:       77	|| Inst at 0x1c            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:       78	|| Inst at 0x20            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:       79	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       |
+Cycle:       80	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          |
+Cycle:       81	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:       82	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:       83	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:       84	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:       85	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:       86	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:       87	|| Inst at 0x1c            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:       88	|| Inst at 0x20            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:       89	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       |
+Cycle:       90	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          |
+Cycle:       91	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:       92	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:       93	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:       94	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:       95	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:       96	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:       97	|| Inst at 0x1c            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:       98	|| Inst at 0x20            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:       99	|| Inst at 0x24            | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          | blt zero, t1, -24       |
+Cycle:      100	|| Inst at 0x28            | add t2, t3, t4          | lw t4, 4(t0)            | lw t3, 0(t0)            | NOP (squashed)          |
+Cycle:      101	|| Inst at 0x28            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            | lw t3, 0(t0)            |
+Cycle:      102	|| Inst at 0x2c            | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            | lw t4, 4(t0)            |
+Cycle:      103	|| Inst at 0x30            | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          | NOP (bubble)            |
+Cycle:      104	|| Inst at 0x34            | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            | add t2, t3, t4          |
+Cycle:      105	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | addi t1, t1, -1         | addi t0, t0, 4          | sw t2, 8(t0)            |
+Cycle:      106	|| Inst at 0x38 (spcu)     | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         | addi t0, t0, 4          |
+Cycle:      107	|| Inst at 0x3c            | HALT                    | blt zero, t1, -24       | NOP (bubble)            | addi t1, t1, -1         |
+Cycle:      108	|| Inst at 0x40            | ILLEGAL                 | HALT                    | blt zero, t1, -24       | NOP (bubble)            |
+Cycle:      109	|| Inst at 0x8000          | NOP (squashed)          | NOP (squashed)          | HALT                    | blt zero, t1, -24       |
+Cycle:      110	|| Inst at 0x8004          | ILLEGAL                 | NOP (squashed)          | NOP (squashed)          | HALT                    |

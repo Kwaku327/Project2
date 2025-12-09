@@ -1,0 +1,19 @@
+Cycle:        0	|| Inst at 0x0             | NOP (idle)              | NOP (idle)              | NOP (idle)              | NOP (idle)              |
+Cycle:        1	|| Inst at 0x0             | NOP (bubble)            | NOP (idle)              | NOP (idle)              | NOP (idle)              |
+Cycle:        2	|| Inst at 0x0             | NOP (bubble)            | NOP (bubble)            | NOP (idle)              | NOP (idle)              |
+Cycle:        3	|| Inst at 0x0             | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            | NOP (idle)              |
+Cycle:        4	|| Inst at 0x0             | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            |
+Cycle:        5	|| Inst at 0x0             | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            |
+Cycle:        6	|| Inst at 0x4             | addi t0, zero, 60       | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            |
+Cycle:        7	|| Inst at 0x8             | addi t5, zero, 108      | addi t0, zero, 60       | NOP (bubble)            | NOP (bubble)            |
+Cycle:        8	|| Inst at 0xc             | ILLEGAL                 | addi t5, zero, 108      | addi t0, zero, 60       | NOP (bubble)            |
+Cycle:        9	|| Inst at 0x8000          | NOP (squashed)          | NOP (squashed)          | addi t5, zero, 108      | addi t0, zero, 60       |
+Cycle:       10	|| Inst at 0x8000          | NOP (bubble)            | NOP (squashed)          | NOP (squashed)          | addi t5, zero, 108      |
+Cycle:       11	|| Inst at 0x8000          | NOP (bubble)            | NOP (bubble)            | NOP (squashed)          | NOP (squashed)          |
+Cycle:       12	|| Inst at 0x8000          | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            | NOP (squashed)          |
+Cycle:       13	|| Inst at 0x8000          | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            |
+Cycle:       14	|| Inst at 0x8000          | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            |
+Cycle:       15	|| Inst at 0x8004          | HALT                    | NOP (bubble)            | NOP (bubble)            | NOP (bubble)            |
+Cycle:       16	|| Inst at 0x8008          | ILLEGAL                 | HALT                    | NOP (bubble)            | NOP (bubble)            |
+Cycle:       17	|| Inst at 0x8000          | NOP (squashed)          | NOP (squashed)          | HALT                    | NOP (bubble)            |
+Cycle:       18	|| Inst at 0x8004          | HALT                    | NOP (squashed)          | NOP (squashed)          | HALT                    |

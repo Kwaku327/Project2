@@ -1,0 +1,8 @@
+2048  	    # [ICache]  2K Instruction Cache
+16      	#           16 byte block size
+2       	#           2-way set associative
+5        	#           5 cycle miss penalty
+4096  	    # [DCache]  4K Data Cache
+16      	#           16 byte block size
+4       	#           4-way set associative
+8        	#           8 cycle miss penalty

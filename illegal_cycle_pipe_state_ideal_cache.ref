@@ -1,0 +1,9 @@
+Cycle:        0	|| Inst at 0x0             | NOP (idle)              | NOP (idle)              | NOP (idle)              | NOP (idle)              |
+Cycle:        1	|| Inst at 0x4             | addi t0, zero, 60       | NOP (idle)              | NOP (idle)              | NOP (idle)              |
+Cycle:        2	|| Inst at 0x8             | addi t5, zero, 108      | addi t0, zero, 60       | NOP (idle)              | NOP (idle)              |
+Cycle:        3	|| Inst at 0xc             | ILLEGAL                 | addi t5, zero, 108      | addi t0, zero, 60       | NOP (idle)              |
+Cycle:        4	|| Inst at 0x8000          | NOP (squashed)          | NOP (squashed)          | addi t5, zero, 108      | addi t0, zero, 60       |
+Cycle:        5	|| Inst at 0x8004          | HALT                    | NOP (squashed)          | NOP (squashed)          | addi t5, zero, 108      |
+Cycle:        6	|| Inst at 0x8008          | ILLEGAL                 | HALT                    | NOP (squashed)          | NOP (squashed)          |
+Cycle:        7	|| Inst at 0x8000          | NOP (squashed)          | NOP (squashed)          | HALT                    | NOP (squashed)          |
+Cycle:        8	|| Inst at 0x8004          | HALT                    | NOP (squashed)          | NOP (squashed)          | HALT                    |
