@@ -407,15 +407,19 @@ Simulator::Instruction Simulator::simMemAccess(Instruction inst, MemoryStore *my
 
     if (inst.readsMem) {
         uint64_t value;
-        myMem->getMemValue(inst.memAddress, value, size);
-        
-        if (inst.funct3 == FUNCT3_B || inst.funct3 == FUNCT3_H || inst.funct3 == FUNCT3_W) {
-            inst.memResult = sext64(value, size * 8 - 1);
+        if (myMem->getMemValue(inst.memAddress, value, size) != 0) {
+            inst.memException = true;
         } else {
-            inst.memResult = value;
+            if (inst.funct3 == FUNCT3_B || inst.funct3 == FUNCT3_H || inst.funct3 == FUNCT3_W) {
+                inst.memResult = sext64(value, size * 8 - 1);
+            } else {
+                inst.memResult = value;
+            }
         }
     } else if (inst.writesMem) {
-        myMem->setMemValue(inst.memAddress, inst.op2Val, size);
+        if (myMem->setMemValue(inst.memAddress, inst.op2Val, size) != 0) {
+            inst.memException = true;
+        }
     }
 
     return inst;
@@ -435,23 +439,42 @@ Simulator::Instruction Simulator::simCommit(Instruction inst, REGS &regData) {
 // You may find it useful to call functional simulation functions above
 
 Simulator::Instruction Simulator::simIF(uint64_t PC) {
-    throw std::runtime_error("simIF not implemented yet"); // TODO implement IF 
+    Instruction inst = simFetch(PC, memory);
+    inst.status = NORMAL;
+    return inst;
 }
 
 Simulator::Instruction Simulator::simID(Simulator::Instruction inst) {
-    throw std::runtime_error("simID not implemented yet"); // TODO implement ID
+    inst = simDecode(inst);
+    if (!inst.isLegal || inst.isHalt || inst.isNop) {
+        return inst;
+    }
+    inst = simOperandCollection(inst, regData);
+    return inst;
 }
 
 Simulator::Instruction Simulator::simEX(Simulator::Instruction inst) {
-    throw std::runtime_error("simEX not implemented yet"); // TODO implement EX
+    if (!inst.isLegal || inst.isHalt || inst.isNop) return inst;
+    if (inst.doesArithLogic) inst = simArithLogic(inst);
+    if (inst.readsMem || inst.writesMem) inst = simAddrGen(inst);
+    return inst;
 }
 
 Simulator::Instruction Simulator::simMEM(Simulator::Instruction inst) {
-    throw std::runtime_error("simMEM not implemented yet"); // TODO implement MEM
+    if (!inst.isLegal || inst.isHalt || inst.isNop || inst.memException) return inst;
+    if (inst.readsMem || inst.writesMem) inst = simMemAccess(inst, memory);
+    return inst;
 }
 
 Simulator::Instruction Simulator::simWB(Simulator::Instruction inst) {
-    throw std::runtime_error("simWB not implemented yet"); // TODO implement WB
+    if (!inst.isLegal || inst.isNop || inst.status == SQUASHED || inst.status == BUBBLE ||
+        inst.status == IDLE || inst.memException) {
+        return inst;
+    }
+
+    if (inst.writesRd && inst.rd != 0) inst = simCommit(inst, regData);
+    din++;
+    return inst;
 }
 
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <inttypes.h>
+#include <cmath>
 #include <iostream>
 #include <vector>
 #include "Utilities.h"
@@ -28,6 +29,27 @@ class Cache {
 private:
     uint64_t hits, misses;    
     CacheDataType type;
+    uint64_t numSets;
+    uint64_t blockOffsetBits;
+    uint64_t setIndexBits;
+    uint64_t setIndexMask;
+    uint64_t accessCounter = 0;
+
+    struct Line {
+        bool     valid = false;
+        uint64_t tag = 0;
+        uint64_t lastUsed = 0;  // For true LRU
+    };
+
+    std::vector<std::vector<Line>> sets;
+
+    inline uint64_t getSetIndex(uint64_t address) const {
+        return (address >> blockOffsetBits) & setIndexMask;
+    }
+
+    inline uint64_t getTag(uint64_t address) const {
+        return address >> (blockOffsetBits + setIndexBits);
+    }
 
 public:
     CacheConfig config;

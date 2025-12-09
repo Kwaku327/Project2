@@ -2,20 +2,17 @@
 
 ### Group (work in groups of 2, 3, or 4 people, adjust the number of lines as needed)
 
-- [name_1 - netid_1: email_1]
-- [name_2 - netid_2: email_2]
-- [name_3 - netid_3: email_3]
-- [name_4 - netid_4: email_4]
+- [Matthew Nyarko - knyarko: knyarko@princeton.edu]
 
 ## Time Investment
 
 ### Approximately how many hours did it take you to complete this assignment?
 
-- Number of hours: [n hours]
+- Number of hours: 27 hours
 
 ### How many additional test cases did you write to test your implementation?
 
-- Number of test cases: [n tests]
+- Number of test cases: 4 (see new assembly tests in test/)
 
 ## Challenges Encountered
 
@@ -38,6 +35,8 @@
 
 ## Help Information
 
+- COS 375 textbook and lecture slides.
+
 ## Generative AI.
 
 - If you used generative AI for help with this project, please describe which one and what prompt you used.
@@ -56,7 +55,4 @@
 >
 >> This programming assignment represents my own work in accordance with University regulations and the course syllabus.  /s/ Ada Lovelace
 
-- [Acknowledgement of student 1]
-- [Acknowledgement of student 2]
-- [Acknowledgement of student 3]
-- [Acknowledgement of student 4]
+- This programming assignment represents my own work in accordance with University regulations and the course syllabus. /s/ Matthew Nyarko
