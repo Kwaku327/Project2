@@ -29,7 +29,14 @@ void Simulator::dumpRegMem(const std::string& output_name) {
 Simulator::Instruction Simulator::simFetch(uint64_t PC, MemoryStore *myMem) {
     // fetch current instruction
     uint64_t instruction;
-    myMem->getMemValue(PC, instruction, WORD_SIZE);
+    if (myMem->getMemValue(PC, instruction, WORD_SIZE) != 0) {
+        // Treat fetch beyond memory as illegal to trigger exception handling downstream
+        Instruction inst;
+        inst.PC = PC;
+        inst.instruction = 0;
+        inst.isLegal = false;
+        return inst;
+    }
     instruction = (uint32_t)instruction;
 
     Instruction inst;

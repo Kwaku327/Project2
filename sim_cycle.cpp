@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <tuple>
+#include <sstream>
 
 #include "cache.h"
 #include "MemoryStore.h"
