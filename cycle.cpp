@@ -7,7 +7,6 @@
 #include "cache.h"
 #include "simulator.h"
 
-// Kinda global helpers
 static Simulator* simulator = nullptr;
 static Cache* iCache = nullptr;
 static Cache* dCache = nullptr;
@@ -44,9 +43,8 @@ struct PipelineInfo {
 
 static PipelineInfo pipelineInfo;
 
-// Helpers for forwarding detection
+// Helpers for forwarding detection (only from EX/MEM and MEM/WB)
 static uint64_t forwardValue(const Simulator::Instruction& inst,
-                             const Simulator::Instruction& exSrc,
                              const Simulator::Instruction& memSrc,
                              const Simulator::Instruction& wbSrc,
                              uint64_t orig,
@@ -56,9 +54,6 @@ static uint64_t forwardValue(const Simulator::Instruction& inst,
                ((isRs1 && inst.rs1 == src.rd) || (!isRs1 && inst.rs2 == src.rd));
     };
 
-    if (matches(exSrc)) {
-        return exSrc.readsMem ? exSrc.memResult : exSrc.arithResult;
-    }
     if (matches(memSrc)) {
         return memSrc.readsMem ? memSrc.memResult : memSrc.arithResult;
     }
@@ -83,7 +78,7 @@ Status initSimulator(CacheConfig& iCacheConfig, CacheConfig& dCacheConfig, Memor
     iMissRemaining = dMissRemaining = 0;
 
     pipelineInfo = {};
-    pipelineInfo.ifInst = nop(IDLE);
+    pipelineInfo.ifInst = nop(NORMAL);
     pipelineInfo.idInst = nop(IDLE);
     pipelineInfo.exInst = nop(IDLE);
     pipelineInfo.memInst = nop(IDLE);
@@ -151,16 +146,10 @@ Status runCycles(uint64_t cycles) {
                               ((old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) ||
                                (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd)));
 
-        bool idIsCtrl = (old.idInst.opcode == OP_BRANCH || old.idInst.opcode == OP_JALR);
-        bool branchDataHazard = (idIsCtrl && old.exInst.readsMem && old.exInst.writesRd &&
-                                 old.exInst.rd != 0 &&
-                                 ((old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) ||
-                                  (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd)));
-
-        if (loadUseHazard || branchDataHazard) loadUseStalls++;
+        if (loadUseHazard) loadUseStalls++;
 
         bool dMissStall = dMissActive && dMissRemaining > 0;
-        bool pipelineStall = loadUseHazard || branchDataHazard || dMissStall;
+        bool pipelineStall = loadUseHazard || dMissStall || dMissActive;
 
         // MEM stage
         if (dMissActive) {
@@ -175,8 +164,7 @@ Status runCycles(uint64_t cycles) {
             if (memCandidate.writesMem) {
                 // store data might need late forwarding, hope thats ok
                 memCandidate.op2Val =
-                    forwardValue(memCandidate, old.exInst, old.memInst, old.wbInst,
-                                 memCandidate.op2Val, false);
+                    forwardValue(memCandidate, old.memInst, old.wbInst, memCandidate.op2Val, false);
             }
 
             bool startMiss = false;
@@ -190,7 +178,6 @@ Status runCycles(uint64_t cycles) {
                     dMissActive = true;
                     dMissRemaining = static_cast<int64_t>(dCache->config.missLatency);
                     next.memInst = memCandidate;
-                    PC = PC;  // yeah just leave PC alone
                 }
             }
 
@@ -204,11 +191,15 @@ Status runCycles(uint64_t cycles) {
             auto idInst = old.idInst;
             if (idInst.readsRs1)
                 idInst.op1Val =
-                    forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op1Val, true);
+                    forwardValue(idInst, old.memInst, old.wbInst, idInst.op1Val, true);
             if (idInst.readsRs2)
-                idInst.op2Val = forwardValue(idInst, old.exInst, old.memInst, old.wbInst,
-                                             idInst.op2Val, false);
-            next.exInst = simulator->simEX(idInst);
+                idInst.op2Val =
+                    forwardValue(idInst, old.memInst, old.wbInst, idInst.op2Val, false);
+            if (idInst.opcode == OP_BRANCH) {
+                next.exInst = nop(BUBBLE);
+            } else {
+                next.exInst = simulator->simEX(idInst);
+            }
         } else {
             next.exInst = nop(BUBBLE);
         }
@@ -229,11 +220,11 @@ Status runCycles(uint64_t cycles) {
             if (ifInst.isLegal && (ifInst.opcode == OP_BRANCH || ifInst.opcode == OP_JALR ||
                                    ifInst.opcode == OP_JAL)) {
                 if (ifInst.readsRs1)
-                    ifInst.op1Val = forwardValue(ifInst, old.exInst, old.memInst, old.wbInst,
-                                                 ifInst.op1Val, true);
+                    ifInst.op1Val =
+                        forwardValue(ifInst, old.memInst, old.wbInst, ifInst.op1Val, true);
                 if (ifInst.readsRs2)
-                    ifInst.op2Val = forwardValue(ifInst, old.exInst, old.memInst, old.wbInst,
-                                                 ifInst.op2Val, false);
+                    ifInst.op2Val =
+                        forwardValue(ifInst, old.memInst, old.wbInst, ifInst.op2Val, false);
                 ifInst = simulator->simNextPCResolution(ifInst);
                 ctrlResolved = true;
                 if (ifInst.nextPC != ifInst.PC + 4) {

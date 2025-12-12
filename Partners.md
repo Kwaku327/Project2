@@ -12,13 +12,13 @@
 
 ### How many additional test cases did you write to test your implementation?
 
-- Number of test cases: 4 (see new assembly tests in test/)
+- Number of test cases: 4 
 
 ## Challenges Encountered
 
 ### Did you encounter any serious problems? If yes, please describe (e.g spec was unclear).
 
-- [Yes/No]
+- [Yes/No] No
 - [If yes, please describe the problems encountered]
 
 ## Additional Comments
