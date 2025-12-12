@@ -45,6 +45,7 @@ static PipelineInfo pipelineInfo;
 
 // Helpers for forwarding detection (only from EX/MEM and MEM/WB)
 static uint64_t forwardValue(const Simulator::Instruction& inst,
+                             const Simulator::Instruction& exSrc,
                              const Simulator::Instruction& memSrc,
                              const Simulator::Instruction& wbSrc,
                              uint64_t orig,
@@ -54,6 +55,9 @@ static uint64_t forwardValue(const Simulator::Instruction& inst,
                ((isRs1 && inst.rs1 == src.rd) || (!isRs1 && inst.rs2 == src.rd));
     };
 
+    if (matches(exSrc) && !exSrc.readsMem) {
+        return exSrc.arithResult;
+    }
     if (matches(memSrc)) {
         return memSrc.readsMem ? memSrc.memResult : memSrc.arithResult;
     }
@@ -114,7 +118,11 @@ Status runCycles(uint64_t cycles) {
 
         if (iMissActive && iMissRemaining > 0) iMissRemaining--;
         if (dMissActive && dMissRemaining > 0) dMissRemaining--;
-        if (iMissActive && iMissRemaining == 0) iMissActive = false;
+        bool iMissResolved = iMissActive && (iMissRemaining == 0);
+        if (iMissResolved) {
+            iMissActive = false;
+            PC += 4;  // finally advance the fetch PC after miss finishes
+        }
 
         // Writeback happens first in conceptual pipeline
         next.wbInst = simulator->simWB(old.memInst);
@@ -164,7 +172,7 @@ Status runCycles(uint64_t cycles) {
             if (memCandidate.writesMem) {
                 // store data might need late forwarding, hope thats ok
                 memCandidate.op2Val =
-                    forwardValue(memCandidate, old.memInst, old.wbInst, memCandidate.op2Val, false);
+                    forwardValue(memCandidate, old.exInst, old.memInst, old.wbInst, memCandidate.op2Val, false);
             }
 
             bool startMiss = false;
@@ -191,10 +199,10 @@ Status runCycles(uint64_t cycles) {
             auto idInst = old.idInst;
             if (idInst.readsRs1)
                 idInst.op1Val =
-                    forwardValue(idInst, old.memInst, old.wbInst, idInst.op1Val, true);
+                    forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op1Val, true);
             if (idInst.readsRs2)
                 idInst.op2Val =
-                    forwardValue(idInst, old.memInst, old.wbInst, idInst.op2Val, false);
+                    forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op2Val, false);
             next.exInst = simulator->simEX(idInst);
         } else {
             next.exInst = nop(BUBBLE);
@@ -217,10 +225,10 @@ Status runCycles(uint64_t cycles) {
                                    ifInst.opcode == OP_JAL)) {
                 if (ifInst.readsRs1)
                     ifInst.op1Val =
-                        forwardValue(ifInst, old.memInst, old.wbInst, ifInst.op1Val, true);
+                        forwardValue(ifInst, old.exInst, old.memInst, old.wbInst, ifInst.op1Val, true);
                 if (ifInst.readsRs2)
                     ifInst.op2Val =
-                        forwardValue(ifInst, old.memInst, old.wbInst, ifInst.op2Val, false);
+                        forwardValue(ifInst, old.exInst, old.memInst, old.wbInst, ifInst.op2Val, false);
                 ifInst = simulator->simNextPCResolution(ifInst);
                 ctrlResolved = true;
                 if (ifInst.nextPC != ifInst.PC + 4) {
@@ -251,7 +259,6 @@ Status runCycles(uint64_t cycles) {
                     iMissRemaining = static_cast<int64_t>(iCache->config.missLatency);
                     fetched.status = parentCtrl ? SPECULATIVE : fetched.status;
                     next.ifInst = fetched;
-                    PC = fetchPC + 4;
                 }
             }
 
@@ -270,8 +277,6 @@ Status runCycles(uint64_t cycles) {
             next.ifInst = nop(SQUASHED);
             iMissActive = false;
             iMissRemaining = 0;
-        } else if (ctrlResolved && next.ifInst.status == SPECULATIVE) {
-            next.ifInst.status = NORMAL;
         }
 
         if (illegalTrap) {
