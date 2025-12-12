@@ -1,43 +1,39 @@
 #include "cycle.h"
 
 #include <iostream>
-#include <memory>
 #include <string>
 
 #include "Utilities.h"
 #include "cache.h"
 #include "simulator.h"
 
+// Kinda global helpers
 static Simulator* simulator = nullptr;
 static Cache* iCache = nullptr;
 static Cache* dCache = nullptr;
 static std::string output;
+
 static uint64_t cycleCount = 0;
 static uint64_t loadUseStalls = 0;
-static uint64_t loadUseStalls = 0;
-
 static uint64_t PC = 0;
+
 static const uint64_t EXCEPTION_HANDLER_ADDR = 0x8000;
-static int branchStallCounter = 0;
-static const uint64_t EXCEPTION_HANDLER_ADDR = 0x8000;
-static int branchStallCounter = 0;
+
+// Cache miss tracking
+static bool iMissActive = false;
+static int64_t iMissRemaining = 0;
+static bool dMissActive = false;
+static int64_t dMissRemaining = 0;
 
 Simulator::Instruction nop(StageStatus status) {
     Simulator::Instruction inst;
-    inst.instruction = 0x00000013;
-    inst.isLegal = true;
-    inst.isNop = true;
-    inst.status = status;
-    return inst;
-    Simulator::Instruction inst;
-    inst.instruction = 0x00000013;
+    inst.instruction = 0x00000013;  // addi x0, x0, 0
     inst.isLegal = true;
     inst.isNop = true;
     inst.status = status;
     return inst;
 }
 
-struct PipelineInfo {
 struct PipelineInfo {
     Simulator::Instruction ifInst = nop(IDLE);
     Simulator::Instruction idInst = nop(IDLE);
@@ -47,50 +43,8 @@ struct PipelineInfo {
 };
 
 static PipelineInfo pipelineInfo;
-};
-
-static PipelineInfo pipelineInfo;
-
-// Cache miss tracking
-static bool iMissActive = false;
-static int64_t iMissRemaining = 0;
-static bool dMissActive = false;
-static int64_t dMissRemaining = 0;
-// Cache miss tracking
-static bool iMissActive = false;
-static int64_t iMissRemaining = 0;
-static bool dMissActive = false;
-static int64_t dMissRemaining = 0;
-
-Status initSimulator(CacheConfig& iCacheConfig, CacheConfig& dCacheConfig, MemoryStore* mem,
-                     const std::string& output_name) {
-    output = output_name;
-    simulator = new Simulator();
-    simulator->setMemory(mem);
-    iCache = new Cache(iCacheConfig, I_CACHE);
-    dCache = new Cache(dCacheConfig, D_CACHE);
-    PC = 0;
-    cycleCount = 0;
-    loadUseStalls = 0;
-    branchStallCounter = 0;
-    iMissActive = dMissActive = false;
-    iMissRemaining = dMissRemaining = 0;
-    pipelineInfo = {};
-    pipelineInfo.ifInst = nop(IDLE);
-    pipelineInfo.idInst = nop(IDLE);
-    pipelineInfo.exInst = nop(IDLE);
-    pipelineInfo.memInst = nop(IDLE);
-    pipelineInfo.wbInst = nop(IDLE);
-    return SUCCESS;
-}
 
 // Helpers for forwarding detection
-static bool dependsOn(const Simulator::Instruction& consumer, const Simulator::Instruction& producer) {
-    if (!producer.writesRd || producer.rd == 0) return false;
-    return (consumer.readsRs1 && consumer.rs1 == producer.rd) ||
-           (consumer.readsRs2 && consumer.rs2 == producer.rd);
-}
-
 static uint64_t forwardValue(const Simulator::Instruction& inst,
                              const Simulator::Instruction& exSrc,
                              const Simulator::Instruction& memSrc,
@@ -101,6 +55,7 @@ static uint64_t forwardValue(const Simulator::Instruction& inst,
         return src.writesRd && src.rd != 0 &&
                ((isRs1 && inst.rs1 == src.rd) || (!isRs1 && inst.rs2 == src.rd));
     };
+
     if (matches(exSrc)) {
         return exSrc.readsMem ? exSrc.memResult : exSrc.arithResult;
     }
@@ -113,12 +68,36 @@ static uint64_t forwardValue(const Simulator::Instruction& inst,
     return orig;
 }
 
+Status initSimulator(CacheConfig& iCacheConfig, CacheConfig& dCacheConfig, MemoryStore* mem,
+                     const std::string& output_name) {
+    output = output_name;
+    simulator = new Simulator();
+    simulator->setMemory(mem);
+    iCache = new Cache(iCacheConfig, I_CACHE);
+    dCache = new Cache(dCacheConfig, D_CACHE);
+
+    PC = 0;
+    cycleCount = 0;
+    loadUseStalls = 0;
+    iMissActive = dMissActive = false;
+    iMissRemaining = dMissRemaining = 0;
+
+    pipelineInfo = {};
+    pipelineInfo.ifInst = nop(IDLE);
+    pipelineInfo.idInst = nop(IDLE);
+    pipelineInfo.exInst = nop(IDLE);
+    pipelineInfo.memInst = nop(IDLE);
+    pipelineInfo.wbInst = nop(IDLE);
+    return SUCCESS;
+}
+
 Status runCycles(uint64_t cycles) {
     uint64_t executed = 0;
     Status status = SUCCESS;
 
     while (cycles == 0 || executed < cycles) {
         executed++;
+
         PipeState pipeState{};
         pipeState.cycle = cycleCount;
         pipeState.ifPC = pipelineInfo.ifInst.PC;
@@ -138,14 +117,11 @@ Status runCycles(uint64_t cycles) {
         PipelineInfo old = pipelineInfo;
         PipelineInfo next{nop(BUBBLE), nop(BUBBLE), nop(BUBBLE), nop(BUBBLE), nop(BUBBLE)};
 
-        // Outstanding miss counters tick down
         if (iMissActive && iMissRemaining > 0) iMissRemaining--;
         if (dMissActive && dMissRemaining > 0) dMissRemaining--;
+        if (iMissActive && iMissRemaining == 0) iMissActive = false;
 
-        bool iMissStall = iMissActive && iMissRemaining > 0;
-        bool dMissStall = dMissActive && dMissRemaining > 0;
-
-        // Writeback
+        // Writeback happens first in conceptual pipeline
         next.wbInst = simulator->simWB(old.memInst);
         if (next.wbInst.isHalt) {
             pipelineInfo = next;
@@ -153,12 +129,12 @@ Status runCycles(uint64_t cycles) {
             break;
         }
 
-        // Exception checks
+        // Exceptions: illegal in ID, memory in MEM
         bool illegalTrap =
-            (old.idInst.status == NORMAL && !old.idInst.isNop && !old.idInst.isHalt && !old.idInst.isLegal);
+            (old.idInst.status == NORMAL && !old.idInst.isNop && !old.idInst.isHalt &&
+             !old.idInst.isLegal);
         bool memTrap = (old.memInst.status == NORMAL && old.memInst.memException);
         if (memTrap) {
-            // Flush younger and redirect
             next.memInst = nop(SQUASHED);
             next.exInst = nop(SQUASHED);
             next.idInst = nop(SQUASHED);
@@ -170,37 +146,25 @@ Status runCycles(uint64_t cycles) {
             continue;
         }
 
-        // Branch stall bookkeeping
-        if (branchStallCounter > 0) branchStallCounter--;
+        // Hazards (kinda quick + dirty check)
+        bool loadUseHazard = (old.exInst.readsMem && old.exInst.writesRd && old.exInst.rd != 0 &&
+                              ((old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) ||
+                               (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd)));
 
-        // Hazards: load-use
-        bool loadUseHazard = false;
-        if (old.exInst.readsMem && old.exInst.writesRd && old.exInst.rd != 0) {
-            if (old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) loadUseHazard = true;
-            if (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd && !old.idInst.writesMem)
-                loadUseHazard = true;
-        }
-        if (loadUseHazard) loadUseStalls++;
+        bool idIsCtrl = (old.idInst.opcode == OP_BRANCH || old.idInst.opcode == OP_JALR);
+        bool branchDataHazard = (idIsCtrl && old.exInst.readsMem && old.exInst.writesRd &&
+                                 old.exInst.rd != 0 &&
+                                 ((old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) ||
+                                  (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd)));
 
-        // Branch stall detection (branch/jalr need operand forwarding)
-        bool branchStall = branchStallCounter > 0;
-        bool idIsBranch = (old.idInst.opcode == OP_BRANCH || old.idInst.opcode == OP_JALR);
-        if (!branchStall && idIsBranch) {
-            if (dependsOn(old.idInst, old.exInst)) {
-                branchStallCounter = old.exInst.readsMem ? 2 : 1;
-                branchStall = true;
-                if (old.exInst.readsMem) loadUseStalls++;
-            } else if (dependsOn(old.idInst, old.memInst) && old.memInst.readsMem) {
-                branchStallCounter = 1;
-                branchStall = true;
-                loadUseStalls++;
-            }
-        }
+        if (loadUseHazard || branchDataHazard) loadUseStalls++;
+
+        bool dMissStall = dMissActive && dMissRemaining > 0;
+        bool pipelineStall = loadUseHazard || branchDataHazard || dMissStall;
 
         // MEM stage
         if (dMissActive) {
             if (dMissRemaining == 0) {
-                // Miss resolved this cycle
                 next.memInst = simulator->simMEM(old.memInst);
                 dMissActive = false;
             } else {
@@ -209,20 +173,24 @@ Status runCycles(uint64_t cycles) {
         } else {
             auto memCandidate = old.exInst;
             if (memCandidate.writesMem) {
+                // store data might need late forwarding, hope thats ok
                 memCandidate.op2Val =
-                    forwardValue(memCandidate, old.exInst, old.memInst, old.wbInst, memCandidate.op2Val, false);
+                    forwardValue(memCandidate, old.exInst, old.memInst, old.wbInst,
+                                 memCandidate.op2Val, false);
             }
 
             bool startMiss = false;
             if (memCandidate.status == NORMAL && memCandidate.isLegal &&
                 (memCandidate.readsMem || memCandidate.writesMem)) {
                 bool hit =
-                    dCache->access(memCandidate.memAddress, memCandidate.writesMem ? CACHE_WRITE : CACHE_READ);
+                    dCache->access(memCandidate.memAddress,
+                                   memCandidate.writesMem ? CACHE_WRITE : CACHE_READ);
                 if (!hit) {
                     startMiss = true;
                     dMissActive = true;
                     dMissRemaining = static_cast<int64_t>(dCache->config.missLatency);
                     next.memInst = memCandidate;
+                    PC = PC;  // yeah just leave PC alone
                 }
             }
 
@@ -231,38 +199,48 @@ Status runCycles(uint64_t cycles) {
             }
         }
 
-        bool pipelineStall = loadUseHazard || branchStall || dMissStall || dMissActive;
-
-        // EX stage (only when not stalled by hazards/mem miss)
+        // EX stage
         if (!pipelineStall && !illegalTrap) {
             auto idInst = old.idInst;
             if (idInst.readsRs1)
-                idInst.op1Val = forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op1Val, true);
+                idInst.op1Val =
+                    forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op1Val, true);
             if (idInst.readsRs2)
-                idInst.op2Val = forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op2Val, false);
+                idInst.op2Val = forwardValue(idInst, old.exInst, old.memInst, old.wbInst,
+                                             idInst.op2Val, false);
             next.exInst = simulator->simEX(idInst);
         } else {
             next.exInst = nop(BUBBLE);
         }
 
-        // ID stage (consume IF unless stalled)
-        bool allowID = !pipelineStall && !iMissStall && !iMissActive;
+        // ID stage
+        bool iStall = iMissActive && iMissRemaining > 0;
+        bool allowID = !pipelineStall && !iStall;
         bool branchTaken = false;
+        bool ctrlResolved = false;
         uint64_t branchTarget = 0;
+
         if (allowID) {
             auto ifInst = simulator->simID(old.ifInst);
-            // Forward for branch/jalr resolution
+            if (ifInst.status == SPECULATIVE) {
+                ifInst.status = NORMAL;  // branch that made it speculative is done now
+            }
+
             if (ifInst.isLegal && (ifInst.opcode == OP_BRANCH || ifInst.opcode == OP_JALR ||
                                    ifInst.opcode == OP_JAL)) {
                 if (ifInst.readsRs1)
-                    ifInst.op1Val = forwardValue(ifInst, old.exInst, old.memInst, old.wbInst, ifInst.op1Val, true);
+                    ifInst.op1Val = forwardValue(ifInst, old.exInst, old.memInst, old.wbInst,
+                                                 ifInst.op1Val, true);
                 if (ifInst.readsRs2)
-                    ifInst.op2Val = forwardValue(ifInst, old.exInst, old.memInst, old.wbInst, ifInst.op2Val, false);
+                    ifInst.op2Val = forwardValue(ifInst, old.exInst, old.memInst, old.wbInst,
+                                                 ifInst.op2Val, false);
                 ifInst = simulator->simNextPCResolution(ifInst);
+                ctrlResolved = true;
                 if (ifInst.nextPC != ifInst.PC + 4) {
                     branchTaken = true;
                     branchTarget = ifInst.nextPC;
                 }
+                ifInst.status = NORMAL;
             }
             next.idInst = ifInst;
         } else {
@@ -270,35 +248,42 @@ Status runCycles(uint64_t cycles) {
         }
 
         // IF stage
-        bool fetchBlocked = pipelineStall || iMissStall || dMissStall || iMissActive;
+        bool fetchBlocked = pipelineStall || iStall || dMissStall;
         if (!fetchBlocked) {
-            auto fetched = simulator->simIF(PC);
-            bool iMiss = false;
+            uint64_t fetchPC = PC;
+            auto fetched = simulator->simIF(fetchPC);
+            bool startMiss = false;
+            bool parentCtrl = (old.idInst.opcode == OP_BRANCH || old.idInst.opcode == OP_JALR ||
+                               old.idInst.opcode == OP_JAL);
+
             if (fetched.status != IDLE) {
-                bool hit = iCache->access(PC, CACHE_READ);
-                iMiss = !hit;
+                bool hit = iCache->access(fetchPC, CACHE_READ);
+                if (!hit) {
+                    startMiss = true;
+                    iMissActive = true;
+                    iMissRemaining = static_cast<int64_t>(iCache->config.missLatency);
+                    fetched.status = parentCtrl ? SPECULATIVE : fetched.status;
+                    next.ifInst = fetched;
+                    PC = fetchPC + 4;
+                }
             }
-            if (iMiss) {
-                iMissActive = true;
-                iMissRemaining = static_cast<int64_t>(iCache->config.missLatency);
+
+            if (!startMiss) {
+                fetched.status = parentCtrl ? SPECULATIVE : NORMAL;
                 next.ifInst = fetched;
-            } else {
-                bool isCtrl = (fetched.opcode == OP_BRANCH || fetched.opcode == OP_JAL || fetched.opcode == OP_JALR);
-                fetched.status = isCtrl ? SPECULATIVE : NORMAL;
-                next.ifInst = fetched;
-                PC += 4;
+                PC = fetchPC + 4;
             }
         } else {
             next.ifInst = old.ifInst;
         }
 
-        // Branch redirect
+        // Branch redirect or speculation cleanup
         if (branchTaken) {
             PC = branchTarget;
+            next.ifInst = nop(SQUASHED);
             iMissActive = false;
             iMissRemaining = 0;
-            next.ifInst = nop(SQUASHED);
-        } else if (next.ifInst.status == SPECULATIVE) {
+        } else if (ctrlResolved && next.ifInst.status == SPECULATIVE) {
             next.ifInst.status = NORMAL;
         }
 
@@ -307,12 +292,6 @@ Status runCycles(uint64_t cycles) {
             next.exInst = nop(SQUASHED);
             next.ifInst = nop(SQUASHED);
             PC = EXCEPTION_HANDLER_ADDR;
-        }
-
-        // I-cache miss completes
-        if (iMissActive && !iMissStall) {
-            iMissActive = false;
-            PC += 4;
         }
 
         pipelineInfo = next;
@@ -332,13 +311,6 @@ Status runTillHalt() {
 
 Status finalizeSimulator() {
     simulator->dumpRegMem(output);
-    SimulationStats stats{simulator->getDin(),
-                          cycleCount,
-                          iCache->getHits(),
-                          iCache->getMisses(),
-                          dCache->getHits(),
-                          dCache->getMisses(),
-                          loadUseStalls};
     SimulationStats stats{simulator->getDin(),
                           cycleCount,
                           iCache->getHits(),
