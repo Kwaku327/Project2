@@ -195,11 +195,7 @@ Status runCycles(uint64_t cycles) {
             if (idInst.readsRs2)
                 idInst.op2Val =
                     forwardValue(idInst, old.memInst, old.wbInst, idInst.op2Val, false);
-            if (idInst.opcode == OP_BRANCH) {
-                next.exInst = nop(BUBBLE);
-            } else {
-                next.exInst = simulator->simEX(idInst);
-            }
+            next.exInst = simulator->simEX(idInst);
         } else {
             next.exInst = nop(BUBBLE);
         }
