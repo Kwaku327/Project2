@@ -152,11 +152,16 @@ Status runCycles(uint64_t cycles) {
         bool loadUseHazard = (old.exInst.readsMem && old.exInst.writesRd && old.exInst.rd != 0 &&
                               ((old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) ||
                                (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd)));
+        bool branchLoadHazard =
+            (old.idInst.opcode == OP_BRANCH || old.idInst.opcode == OP_JALR) &&
+            old.exInst.readsMem && old.exInst.writesRd && old.exInst.rd != 0 &&
+            ((old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) ||
+             (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd));
 
-        if (loadUseHazard) loadUseStalls++;
+        if (loadUseHazard || branchLoadHazard) loadUseStalls++;
 
         bool dMissStall = dMissActive && dMissRemaining > 0;
-        bool pipelineStall = loadUseHazard || dMissStall;
+        bool pipelineStall = loadUseHazard || branchLoadHazard || dMissStall;
 
         // MEM stage
         if (dMissActive) {
