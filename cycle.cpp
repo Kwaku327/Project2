@@ -43,27 +43,36 @@ struct PipelineInfo {
 
 static PipelineInfo pipelineInfo;
 
-// Helpers for forwarding detection (only from EX/MEM and MEM/WB)
+// Check if instruction is valid (not bubble/squashed/idle)
+static bool isValidInst(const Simulator::Instruction& inst) {
+    return inst.status != SQUASHED && inst.status != BUBBLE && inst.status != IDLE;
+}
+
+// Helpers for forwarding detection
 static uint64_t forwardValue(const Simulator::Instruction& inst,
                              const Simulator::Instruction& exSrc,
                              const Simulator::Instruction& memSrc,
                              const Simulator::Instruction& wbSrc,
                              uint64_t orig,
                              bool isRs1) {
-    auto matches = [&](const Simulator::Instruction& src) {
-        return src.writesRd && src.rd != 0 &&
-               ((isRs1 && inst.rs1 == src.rd) || (!isRs1 && inst.rs2 == src.rd));
-    };
+    uint64_t targetReg = isRs1 ? inst.rs1 : inst.rs2;
 
-    if (matches(exSrc) && !exSrc.readsMem) {
+    // EX/MEM forwarding (highest priority for non-load)
+    if (exSrc.writesRd && exSrc.rd != 0 && exSrc.rd == targetReg && isValidInst(exSrc) &&
+        !exSrc.readsMem) {
         return exSrc.arithResult;
     }
-    if (matches(memSrc)) {
+
+    // MEM/WB forwarding
+    if (memSrc.writesRd && memSrc.rd != 0 && memSrc.rd == targetReg && isValidInst(memSrc)) {
         return memSrc.readsMem ? memSrc.memResult : memSrc.arithResult;
     }
-    if (matches(wbSrc)) {
+
+    // WB forwarding (lowest priority)
+    if (wbSrc.writesRd && wbSrc.rd != 0 && wbSrc.rd == targetReg && isValidInst(wbSrc)) {
         return wbSrc.readsMem ? wbSrc.memResult : wbSrc.arithResult;
     }
+
     return orig;
 }
 
@@ -82,7 +91,8 @@ Status initSimulator(CacheConfig& iCacheConfig, CacheConfig& dCacheConfig, Memor
     iMissRemaining = dMissRemaining = 0;
 
     pipelineInfo = {};
-    pipelineInfo.ifInst = nop(NORMAL);
+    pipelineInfo.ifInst = nop(IDLE);
+    pipelineInfo.ifInst.PC = 0;
     pipelineInfo.idInst = nop(IDLE);
     pipelineInfo.exInst = nop(IDLE);
     pipelineInfo.memInst = nop(IDLE);
@@ -97,6 +107,7 @@ Status runCycles(uint64_t cycles) {
     while (cycles == 0 || executed < cycles) {
         executed++;
 
+        // Dump pipe state at the beginning of each cycle
         PipeState pipeState{};
         pipeState.cycle = cycleCount;
         pipeState.ifPC = pipelineInfo.ifInst.PC;
@@ -116,31 +127,59 @@ Status runCycles(uint64_t cycles) {
         PipelineInfo old = pipelineInfo;
         PipelineInfo next{nop(BUBBLE), nop(BUBBLE), nop(BUBBLE), nop(BUBBLE), nop(BUBBLE)};
 
+        // Decrement cache miss counters at start of cycle
         if (iMissActive && iMissRemaining > 0) iMissRemaining--;
         if (dMissActive && dMissRemaining > 0) dMissRemaining--;
-        bool iMissResolved = iMissActive && (iMissRemaining == 0);
-        if (iMissResolved) {
-            iMissActive = false;
-        }
 
-        // Writeback happens first in conceptual pipeline
+        // ===== WB Stage =====
         next.wbInst = simulator->simWB(old.memInst);
-        if (next.wbInst.isHalt) {
+        if (next.wbInst.isHalt && isValidInst(next.wbInst)) {
             pipelineInfo = next;
             status = HALT;
             break;
         }
 
-        // Exceptions: illegal in ID, memory in MEM
-        bool illegalTrap =
-            (old.idInst.status == NORMAL && !old.idInst.isNop && !old.idInst.isHalt &&
-             !old.idInst.isLegal);
-        bool memTrap = (old.memInst.status == NORMAL && old.memInst.memException);
+        // ===== Detect D-cache stall =====
+        bool dMissStall = dMissActive && dMissRemaining > 0;
+
+        // ===== Load-use hazard detection =====
+        // Load in EX, dependent instruction in ID
+        bool loadUseHazard = false;
+        if (old.exInst.readsMem && old.exInst.writesRd && old.exInst.rd != 0 &&
+            isValidInst(old.exInst)) {
+            if (isValidInst(old.idInst) && !old.idInst.isNop && !old.idInst.isHalt) {
+                if ((old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) ||
+                    (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd)) {
+                    loadUseHazard = true;
+                }
+            }
+        }
+
+        // Count load-use stalls (only when not already stalled by d-cache)
+        if (loadUseHazard && !dMissStall) {
+            loadUseStalls++;
+        }
+
+        bool pipelineStall = loadUseHazard || dMissStall;
+
+        // ===== Exception Detection =====
+        // Illegal instruction in ID
+        bool illegalTrap = false;
+        if (isValidInst(old.idInst) && !old.idInst.isNop && !old.idInst.isHalt &&
+            !old.idInst.isLegal) {
+            illegalTrap = true;
+        }
+
+        // Memory exception in MEM
+        bool memTrap = isValidInst(old.memInst) && old.memInst.memException;
+
+        // ===== Handle Memory Exception =====
         if (memTrap) {
             next.memInst = nop(SQUASHED);
             next.exInst = nop(SQUASHED);
             next.idInst = nop(SQUASHED);
             next.ifInst = nop(SQUASHED);
+            next.ifInst.PC = EXCEPTION_HANDLER_ADDR;
             PC = EXCEPTION_HANDLER_ADDR;
             iMissActive = dMissActive = false;
             iMissRemaining = dMissRemaining = 0;
@@ -148,143 +187,183 @@ Status runCycles(uint64_t cycles) {
             continue;
         }
 
-        // Hazards (kinda quick + dirty check)
-        bool loadUseHazard = (old.exInst.readsMem && old.exInst.writesRd && old.exInst.rd != 0 &&
-                              ((old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) ||
-                               (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd)));
-        bool branchLoadHazard =
-            (old.idInst.opcode == OP_BRANCH || old.idInst.opcode == OP_JALR) &&
-            old.exInst.readsMem && old.exInst.writesRd && old.exInst.rd != 0 &&
-            ((old.idInst.readsRs1 && old.idInst.rs1 == old.exInst.rd) ||
-             (old.idInst.readsRs2 && old.idInst.rs2 == old.exInst.rd));
-
-        if (loadUseHazard || branchLoadHazard) loadUseStalls++;
-
-        bool dMissStall = dMissActive && dMissRemaining > 0;
-        bool pipelineStall = loadUseHazard || branchLoadHazard || dMissStall;
-
-        // MEM stage
+        // ===== MEM Stage =====
         if (dMissActive) {
             if (dMissRemaining == 0) {
+                // D-cache miss resolved
                 next.memInst = simulator->simMEM(old.memInst);
                 dMissActive = false;
             } else {
+                // Still waiting
                 next.memInst = old.memInst;
             }
         } else {
             auto memCandidate = old.exInst;
-            if (memCandidate.writesMem) {
-                // store data might need late forwarding, hope thats ok
-                memCandidate.op2Val =
-                    forwardValue(memCandidate, old.exInst, old.memInst, old.wbInst, memCandidate.op2Val, false);
+
+            // Store data forwarding from MEM/WB
+            if (memCandidate.writesMem && isValidInst(memCandidate)) {
+                // Forward from WB stage for store data
+                if (old.wbInst.writesRd && old.wbInst.rd != 0 && old.wbInst.rd == memCandidate.rs2 &&
+                    isValidInst(old.wbInst)) {
+                    memCandidate.op2Val =
+                        old.wbInst.readsMem ? old.wbInst.memResult : old.wbInst.arithResult;
+                }
             }
 
-            bool startMiss = false;
-            if (memCandidate.status == NORMAL && memCandidate.isLegal &&
+            bool startDMiss = false;
+            if (isValidInst(memCandidate) && memCandidate.isLegal &&
                 (memCandidate.readsMem || memCandidate.writesMem)) {
-                bool hit =
-                    dCache->access(memCandidate.memAddress,
-                                   memCandidate.writesMem ? CACHE_WRITE : CACHE_READ);
+                bool hit = dCache->access(memCandidate.memAddress,
+                                         memCandidate.writesMem ? CACHE_WRITE : CACHE_READ);
                 if (!hit) {
-                    startMiss = true;
+                    startDMiss = true;
                     dMissActive = true;
                     dMissRemaining = static_cast<int64_t>(dCache->config.missLatency);
                     next.memInst = memCandidate;
                 }
             }
 
-            if (!startMiss) {
+            if (!startDMiss) {
                 next.memInst = simulator->simMEM(memCandidate);
             }
         }
 
-        // EX stage
+        // ===== EX Stage =====
         if (!pipelineStall && !illegalTrap) {
             auto idInst = old.idInst;
-            if (idInst.readsRs1)
-                idInst.op1Val =
-                    forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op1Val, true);
-            if (idInst.readsRs2)
-                idInst.op2Val =
-                    forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op2Val, false);
+
+            // Apply forwarding for EX stage
+            if (isValidInst(idInst) && !idInst.isNop && !idInst.isHalt) {
+                if (idInst.readsRs1) {
+                    idInst.op1Val =
+                        forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op1Val, true);
+                }
+                if (idInst.readsRs2) {
+                    idInst.op2Val =
+                        forwardValue(idInst, old.exInst, old.memInst, old.wbInst, idInst.op2Val, false);
+                }
+            }
+
             next.exInst = simulator->simEX(idInst);
         } else {
             next.exInst = nop(BUBBLE);
         }
 
-        // ID stage
-        bool iStall = iMissActive && iMissRemaining > 0;
-        bool allowID = !pipelineStall && !iStall;
+        // ===== ID Stage and Branch Resolution =====
         bool branchTaken = false;
         uint64_t branchTarget = 0;
+        bool iStall = iMissActive && iMissRemaining > 0;
 
-        if (allowID) {
-            auto ifInst = simulator->simID(old.ifInst);
-            if (ifInst.status == SPECULATIVE) {
-                ifInst.status = NORMAL;  // branch that made it speculative is done now
-            }
+        if (!pipelineStall && !iStall) {
+            auto ifInst = old.ifInst;
 
-            if (ifInst.isLegal && (ifInst.opcode == OP_BRANCH || ifInst.opcode == OP_JALR ||
-                                   ifInst.opcode == OP_JAL)) {
-                if (ifInst.readsRs1)
-                    ifInst.op1Val =
-                        forwardValue(ifInst, old.exInst, old.memInst, old.wbInst, ifInst.op1Val, true);
-                if (ifInst.readsRs2)
-                    ifInst.op2Val =
-                        forwardValue(ifInst, old.exInst, old.memInst, old.wbInst, ifInst.op2Val, false);
-                ifInst = simulator->simNextPCResolution(ifInst);
-                if (ifInst.nextPC != ifInst.PC + 4) {
-                    branchTaken = true;
-                    branchTarget = ifInst.nextPC;
+            if (isValidInst(ifInst)) {
+                ifInst = simulator->simID(ifInst);
+
+                // Handle speculative status - clear when entering ID
+                if (ifInst.status == SPECULATIVE) {
+                    ifInst.status = NORMAL;
                 }
-                ifInst.status = NORMAL;
+
+                // Branch/Jump resolution in ID
+                if (ifInst.isLegal && !ifInst.isNop && !ifInst.isHalt &&
+                    (ifInst.opcode == OP_BRANCH || ifInst.opcode == OP_JALR ||
+                     ifInst.opcode == OP_JAL)) {
+
+                    // Apply forwarding for branch operands
+                    if (ifInst.readsRs1) {
+                        ifInst.op1Val =
+                            forwardValue(ifInst, old.exInst, old.memInst, old.wbInst, ifInst.op1Val, true);
+                    }
+                    if (ifInst.readsRs2) {
+                        ifInst.op2Val =
+                            forwardValue(ifInst, old.exInst, old.memInst, old.wbInst, ifInst.op2Val, false);
+                    }
+
+                    ifInst = simulator->simNextPCResolution(ifInst);
+
+                    if (ifInst.nextPC != ifInst.PC + 4) {
+                        branchTaken = true;
+                        branchTarget = ifInst.nextPC;
+                    }
+                    ifInst.status = NORMAL;
+                }
             }
             next.idInst = ifInst;
         } else {
             next.idInst = old.idInst;
         }
 
-        // IF stage
-        bool fetchBlocked = pipelineStall || iStall || dMissStall || iMissActive;
-        if (!fetchBlocked) {
-            uint64_t fetchPC = PC;
-            auto fetched = simulator->simIF(fetchPC);
-            bool startMiss = false;
-            bool parentCtrl = (old.idInst.opcode == OP_BRANCH || old.idInst.opcode == OP_JALR ||
-                               old.idInst.opcode == OP_JAL);
+        // ===== IF Stage =====
+        bool fetchBlocked = pipelineStall || dMissStall;
 
-            if (fetched.status != IDLE) {
+        if (!fetchBlocked) {
+            if (iMissActive) {
+                if (iMissRemaining == 0) {
+                    // I-cache miss just resolved
+                    auto fetched = simulator->simIF(PC);
+
+                    bool parentCtrl =
+                        (old.idInst.opcode == OP_BRANCH || old.idInst.opcode == OP_JALR ||
+                         old.idInst.opcode == OP_JAL) &&
+                        isValidInst(old.idInst);
+                    fetched.status = parentCtrl ? SPECULATIVE : NORMAL;
+                    next.ifInst = fetched;
+                    PC = PC + 4;
+                    iMissActive = false;
+                } else {
+                    // Still waiting for I-cache
+                    next.ifInst = old.ifInst;
+                    next.ifInst.status = BUBBLE;
+                }
+            } else {
+                // Try to fetch
+                uint64_t fetchPC = PC;
+
                 bool hit = iCache->access(fetchPC, CACHE_READ);
                 if (!hit) {
-                    startMiss = true;
+                    // Start I-cache miss
                     iMissActive = true;
                     iMissRemaining = static_cast<int64_t>(iCache->config.missLatency);
-                    next.ifInst = old.ifInst;  // hold fetch until miss resolves
-                }
-            }
+                    next.ifInst = old.ifInst;
+                    next.ifInst.status = BUBBLE;
+                    next.ifInst.PC = fetchPC;
+                } else {
+                    // I-cache hit - fetch succeeds
+                    auto fetched = simulator->simIF(fetchPC);
 
-            if (!startMiss) {
-                fetched.status = parentCtrl ? SPECULATIVE : NORMAL;
-                next.ifInst = fetched;
-                PC = fetchPC + 4;
+                    bool parentCtrl =
+                        (old.idInst.opcode == OP_BRANCH || old.idInst.opcode == OP_JALR ||
+                         old.idInst.opcode == OP_JAL) &&
+                        isValidInst(old.idInst);
+                    fetched.status = parentCtrl ? SPECULATIVE : NORMAL;
+                    next.ifInst = fetched;
+                    PC = fetchPC + 4;
+                }
             }
         } else {
             next.ifInst = old.ifInst;
         }
 
-        // Branch redirect or speculation cleanup
+        // ===== Handle Branch Taken =====
         if (branchTaken) {
             PC = branchTarget;
             next.ifInst = nop(SQUASHED);
+            next.ifInst.PC = branchTarget;
+            // Cancel I-cache miss on wrong path
             iMissActive = false;
             iMissRemaining = 0;
         }
 
+        // ===== Handle Illegal Instruction =====
         if (illegalTrap) {
             next.idInst = nop(SQUASHED);
             next.exInst = nop(SQUASHED);
             next.ifInst = nop(SQUASHED);
+            next.ifInst.PC = EXCEPTION_HANDLER_ADDR;
             PC = EXCEPTION_HANDLER_ADDR;
+            iMissActive = false;
+            iMissRemaining = 0;
         }
 
         pipelineInfo = next;
