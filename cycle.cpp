@@ -121,7 +121,6 @@ Status runCycles(uint64_t cycles) {
         bool iMissResolved = iMissActive && (iMissRemaining == 0);
         if (iMissResolved) {
             iMissActive = false;
-            PC += 4;  // finally advance the fetch PC after miss finishes
         }
 
         // Writeback happens first in conceptual pipeline
@@ -157,7 +156,7 @@ Status runCycles(uint64_t cycles) {
         if (loadUseHazard) loadUseStalls++;
 
         bool dMissStall = dMissActive && dMissRemaining > 0;
-        bool pipelineStall = loadUseHazard || dMissStall || dMissActive;
+        bool pipelineStall = loadUseHazard || dMissStall;
 
         // MEM stage
         if (dMissActive) {
@@ -212,7 +211,6 @@ Status runCycles(uint64_t cycles) {
         bool iStall = iMissActive && iMissRemaining > 0;
         bool allowID = !pipelineStall && !iStall;
         bool branchTaken = false;
-        bool ctrlResolved = false;
         uint64_t branchTarget = 0;
 
         if (allowID) {
@@ -230,7 +228,6 @@ Status runCycles(uint64_t cycles) {
                     ifInst.op2Val =
                         forwardValue(ifInst, old.exInst, old.memInst, old.wbInst, ifInst.op2Val, false);
                 ifInst = simulator->simNextPCResolution(ifInst);
-                ctrlResolved = true;
                 if (ifInst.nextPC != ifInst.PC + 4) {
                     branchTaken = true;
                     branchTarget = ifInst.nextPC;
@@ -243,7 +240,7 @@ Status runCycles(uint64_t cycles) {
         }
 
         // IF stage
-        bool fetchBlocked = pipelineStall || iStall || dMissStall;
+        bool fetchBlocked = pipelineStall || iStall || dMissStall || iMissActive;
         if (!fetchBlocked) {
             uint64_t fetchPC = PC;
             auto fetched = simulator->simIF(fetchPC);
@@ -257,8 +254,7 @@ Status runCycles(uint64_t cycles) {
                     startMiss = true;
                     iMissActive = true;
                     iMissRemaining = static_cast<int64_t>(iCache->config.missLatency);
-                    fetched.status = parentCtrl ? SPECULATIVE : fetched.status;
-                    next.ifInst = fetched;
+                    next.ifInst = old.ifInst;  // hold fetch until miss resolves
                 }
             }
 
