@@ -1,0 +1,7 @@
+sim_cycle
+sim_funct
+*.dSYM
+test/*.bin
+test/*.elf
+*.out
+bin/

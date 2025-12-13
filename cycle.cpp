@@ -132,6 +132,8 @@ Status runCycles(uint64_t cycles) {
         if (dMissActive && dMissRemaining > 0) dMissRemaining--;
 
         // ===== WB Stage =====
+        // WB consumes the MEM stage output (old.memInst). When the MEM stage is stalled,
+        // old.memInst must NOT be held (or we would commit the same instruction repeatedly).
         next.wbInst = simulator->simWB(old.memInst);
         if (next.wbInst.isHalt && isValidInst(next.wbInst)) {
             pipelineInfo = next;
@@ -140,7 +142,35 @@ Status runCycles(uint64_t cycles) {
         }
 
         // ===== Detect D-cache stall =====
+        // During a D-cache miss, the instruction being serviced is held in EX/MEM (old.exInst).
         bool dMissStall = dMissActive && dMissRemaining > 0;
+
+        // ===== Control hazard stalls (branch/jalr resolved in ID) =====
+        auto isBranchLike = [](const Simulator::Instruction& inst) {
+            return isValidInst(inst) && !inst.isNop && !inst.isHalt &&
+                   (inst.opcode == OP_BRANCH || inst.opcode == OP_JALR);
+        };
+        auto idNeedsReg = [&](uint64_t reg) {
+            if (reg == 0 || !isValidInst(old.idInst)) return false;
+            return (old.idInst.readsRs1 && old.idInst.rs1 == reg) ||
+                   (old.idInst.readsRs2 && old.idInst.rs2 == reg);
+        };
+
+        int branchStallCycles = 0;
+        bool branchUsesLoad = false;
+        bool branchHazardFromEX = false;
+        if (isBranchLike(old.idInst)) {
+            if (isValidInst(old.exInst) && old.exInst.writesRd && idNeedsReg(old.exInst.rd)) {
+                branchUsesLoad = old.exInst.readsMem;
+                branchHazardFromEX = true;
+                branchStallCycles = branchUsesLoad ? 2 : 1;  // load-branch needs two cycles
+            } else if (isValidInst(old.memInst) && old.memInst.writesRd &&
+                       idNeedsReg(old.memInst.rd)) {
+                // load has reached MEM, so only one more stall
+                branchUsesLoad = old.memInst.readsMem;
+                branchStallCycles = branchUsesLoad ? 1 : 0;
+            }
+        }
 
         // ===== Load-use hazard detection =====
         // Load in EX, dependent instruction in ID
@@ -155,12 +185,18 @@ Status runCycles(uint64_t cycles) {
             }
         }
 
-        // Count load-use stalls (only when not already stalled by d-cache)
-        if (loadUseHazard && !dMissStall) {
-            loadUseStalls++;
-        }
+        bool branchStall = branchStallCycles > 0;
+        bool pipelineStall = loadUseHazard || branchStall || dMissStall;
 
-        bool pipelineStall = loadUseHazard || dMissStall;
+        // Count load-use stalls (load-use and load-branch both count once)
+        bool countLoadStall = false;
+        if (loadUseHazard) {
+            countLoadStall = true;
+        } else if (branchUsesLoad && branchHazardFromEX) {
+            // only count the first cycle of the two-cycle load->branch stall
+            countLoadStall = true;
+        }
+        if (countLoadStall && !dMissStall) loadUseStalls++;
 
         // ===== Exception Detection =====
         // Illegal instruction in ID
@@ -188,38 +224,43 @@ Status runCycles(uint64_t cycles) {
         }
 
         // ===== MEM Stage =====
+        // MEM consumes EX stage output (old.exInst) and produces MEM stage output (next.memInst).
+        // On a D-cache miss, we hold the miss-causing instruction in EX/MEM (old.exInst) and
+        // emit bubbles from MEM until the miss resolves.
+        bool startDMiss = false;
+        bool dStallThisCycle = dMissStall;
+
         if (dMissActive) {
             if (dMissRemaining == 0) {
-                // D-cache miss resolved
-                next.memInst = simulator->simMEM(old.memInst);
+                // D-cache miss resolved: complete the memory access for the held instruction.
+                next.memInst = simulator->simMEM(old.exInst);
                 dMissActive = false;
             } else {
-                // Still waiting
-                next.memInst = old.memInst;
+                // Still waiting: no new MEM output this cycle.
+                next.memInst = nop(BUBBLE);
             }
         } else {
             auto memCandidate = old.exInst;
 
-            // Store data forwarding from MEM/WB
+            // Store data forwarding for stores reaching MEM (use the value that is being written
+            // back this cycle from old.memInst rather than old.wbInst output).
             if (memCandidate.writesMem && isValidInst(memCandidate)) {
-                // Forward from WB stage for store data
-                if (old.wbInst.writesRd && old.wbInst.rd != 0 && old.wbInst.rd == memCandidate.rs2 &&
-                    isValidInst(old.wbInst)) {
+                if (old.memInst.writesRd && old.memInst.rd != 0 && old.memInst.rd == memCandidate.rs2 &&
+                    isValidInst(old.memInst)) {
                     memCandidate.op2Val =
-                        old.wbInst.readsMem ? old.wbInst.memResult : old.wbInst.arithResult;
+                        old.memInst.readsMem ? old.memInst.memResult : old.memInst.arithResult;
                 }
             }
 
-            bool startDMiss = false;
             if (isValidInst(memCandidate) && memCandidate.isLegal &&
                 (memCandidate.readsMem || memCandidate.writesMem)) {
                 bool hit = dCache->access(memCandidate.memAddress,
-                                         memCandidate.writesMem ? CACHE_WRITE : CACHE_READ);
+                                          memCandidate.writesMem ? CACHE_WRITE : CACHE_READ);
                 if (!hit) {
                     startDMiss = true;
                     dMissActive = true;
                     dMissRemaining = static_cast<int64_t>(dCache->config.missLatency);
-                    next.memInst = memCandidate;
+                    next.memInst = nop(BUBBLE);
                 }
             }
 
@@ -228,8 +269,10 @@ Status runCycles(uint64_t cycles) {
             }
         }
 
+        dStallThisCycle = dStallThisCycle || startDMiss;
+
         // ===== EX Stage =====
-        if (!pipelineStall && !illegalTrap) {
+        if (!pipelineStall && !illegalTrap && !dStallThisCycle) {
             auto idInst = old.idInst;
 
             // Apply forwarding for EX stage
@@ -245,6 +288,9 @@ Status runCycles(uint64_t cycles) {
             }
 
             next.exInst = simulator->simEX(idInst);
+        } else if (dStallThisCycle) {
+            // Hold the miss-causing instruction in EX/MEM while D-cache miss is in progress.
+            next.exInst = old.exInst;
         } else {
             next.exInst = nop(BUBBLE);
         }
@@ -254,7 +300,7 @@ Status runCycles(uint64_t cycles) {
         uint64_t branchTarget = 0;
         bool iStall = iMissActive && iMissRemaining > 0;
 
-        if (!pipelineStall && !iStall) {
+        if (!pipelineStall && !iStall && !dStallThisCycle) {
             auto ifInst = old.ifInst;
 
             if (isValidInst(ifInst)) {
@@ -295,7 +341,7 @@ Status runCycles(uint64_t cycles) {
         }
 
         // ===== IF Stage =====
-        bool fetchBlocked = pipelineStall || dMissStall;
+        bool fetchBlocked = pipelineStall || dStallThisCycle;
 
         if (!fetchBlocked) {
             if (iMissActive) {

@@ -9,6 +9,7 @@ Cache::Cache(CacheConfig configParam, CacheDataType cacheType)
       misses(0),
       type(cacheType),
       config(configParam) {
+    (void)type;  // we don't actually need the type flag for timing, just keeping it around
     // Pre-compute basic geometry.
     blockOffsetBits = static_cast<uint64_t>(std::log2(config.blockSize));
     numSets = config.cacheSize / (config.blockSize * config.ways);

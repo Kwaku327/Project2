@@ -10,15 +10,6 @@
 # Note: If you're having trouble getting the assembler and objcopy executables to work,
 # you might need to mark those files as executables using 'chmod +x filename'
 
-# This Makefile checks if it's being run on one of the Nobel machines
-ALLOWED_HOSTS = davisson.princeton.edu compton.princeton.edu
-CURRENT_HOST := $(shell hostname)
-
-HOST_OK := $(filter $(CURRENT_HOST),$(ALLOWED_HOSTS))
-ifeq ($(HOST_OK),)
-    $(error This project is highly recommended to be completed on Nobel)
-endif
-
 # Compiler settings
 CC = g++
 # Note: All builds will contain debug information
@@ -27,9 +18,9 @@ CFLAGS = --std=c++14 -Wall -g -pedantic -O2
 # Source and header files
 SIM_FUNCT_SRC = sim_funct.cpp funct.cpp simulator.cpp MemoryStore.cpp Utilities.cpp
 SIM_CYCLE_SRC = sim_cycle.cpp cycle.cpp cache.cpp simulator.cpp MemoryStore.cpp Utilities.cpp
-SIM_FUNCT_SRCS = $(addprefix src/, $(SIM_FUNCT_SRC))
-SIM_CYCLE_SRCS = $(addprefix src/, $(SIM_CYCLE_SRC))
-COMMON_HDRS = $(wildcard src/*.h)
+SIM_FUNCT_SRCS = $(SIM_FUNCT_SRC)
+SIM_CYCLE_SRCS = $(SIM_CYCLE_SRC)
+COMMON_HDRS = $(wildcard *.h)
 
 ASSEMBLY_TESTS = $(wildcard test/*.s)
 ASSEMBLY_TARGETS = $(ASSEMBLY_TESTS:.s=.bin)
